@@ -1,0 +1,71 @@
+#!/bin/bash
+
+# ------------- Configuration -------------
+# Directory to back up
+SOURCE_DIR="/path/to/source"
+
+# Backup storage location
+BACKUP_DIR="/path/to/backup"
+
+# Log file location
+LOG_FILE="/path/to/backup/backup.log"
+
+# Email for notifications
+EMAIL="you@example.com"
+
+# Retention period (days)
+RETENTION_DAYS=7
+
+# Enable encryption (yes/no)
+ENCRYPT_BACKUP="yes"
+
+# GPG recipient (used if encryption is enabled)
+GPG_RECIPIENT="your@email.com"
+# ------------------------------------------
+
+# Create backup directory if it doesn't exist
+mkdir -p "$BACKUP_DIR"
+
+# Current date for file naming
+DATE=$(date +"%Y-%m-%d_%H-%M-%S")
+BACKUP_FILE="backup_$DATE.tar.gz"
+BACKUP_PATH="$BACKUP_DIR/$BACKUP_FILE"
+
+# Start backup process
+echo "[$(date)] Starting backup of $SOURCE_DIR..." >> "$LOG_FILE"
+
+# Create compressed archive
+tar -czf "$BACKUP_PATH" -C "$SOURCE_DIR" .
+
+# Check success
+if [ $? -eq 0 ]; then
+    echo "[$(date)] Backup created: $BACKUP_PATH" >> "$LOG_FILE"
+    
+    # Encrypt the backup if enabled
+    if [ "$ENCRYPT_BACKUP" = "yes" ]; then
+        gpg --encrypt --recipient "$GPG_RECIPIENT" "$BACKUP_PATH"
+        if [ $? -eq 0 ]; then
+            echo "[$(date)] Backup encrypted successfully." >> "$LOG_FILE"
+            rm -f "$BACKUP_PATH"  # Remove unencrypted backup
+            BACKUP_PATH="$BACKUP_PATH.gpg"
+        else
+            echo "[$(date)] Backup encryption FAILED!" >> "$LOG_FILE"
+            echo "Backup completed but encryption FAILED." | mail -s "Backup Encryption FAILED" "$EMAIL"
+            exit 1
+        fi
+    fi
+
+    echo "[$(date)] Backup successful: $BACKUP_PATH" >> "$LOG_FILE"
+    echo "Backup successful: $BACKUP_PATH" | mail -s "Backup Success" "$EMAIL"
+
+else
+    echo "[$(date)] Backup FAILED!" >> "$LOG_FILE"
+    echo "Backup FAILED during archive creation." | mail -s "Backup FAILED" "$EMAIL"
+    exit 1
+fi
+
+# Cleanup old backups
+find "$BACKUP_DIR" -name "backup_*.tar.gz" -type f -mtime +$RETENTION_DAYS -exec rm -f {} \;
+find "$BACKUP_DIR" -name "backup_*.tar.gz.gpg" -type f -mtime +$RETENTION_DAYS -exec rm -f {} \;
+
+echo "[$(date)] Cleanup of old backups completed." >> "$LOG_FILE"
